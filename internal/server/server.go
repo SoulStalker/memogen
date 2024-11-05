@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"memogen/internal/server"
 	"memogen/internal/service/image"
 	"memogen/internal/service/telegram"
 	"os"
