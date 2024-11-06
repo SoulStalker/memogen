@@ -1,34 +1,75 @@
-package main
+package server
 
 import (
-	"log"
-	"memogen/internal/service/image"
-	"memogen/internal/service/telegram"
+	"context"
+	"github.com/labstack/echo/v4"
+	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
-func main() {
-	imageService := image.NewImageService()
-	telegramService := telegram.NewTelegramService("", imageService)
-	httpServer := server.NewServer(imageService)
+type Server struct {
+	e              *echo.Echo
+	imageInterface ImageInterface
+}
 
-	done := make(chan os.Signal)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+type ImageInterface interface {
+	DrawText(inputFileName, topText, bottomText string) (string, error)
+}
 
-	go func() {
-		log.Print("Telegram service starting...")
-		telegramService.Start()
-	}()
+func NewServer(imageInterface ImageInterface) *Server {
+	e := echo.New()
+	e.POST("/upload", func(c echo.Context) error {
+		// Bind the JSON metadata to a struct
+		metadata := new(Metadata)
 
-	go func() {
-		httpServer.Start()
-	}()
-	<-done
+		topText := c.FormValue("top_text")
+		bottomText := c.FormValue("bottom_text")
+		metadata.TopText = topText
+		metadata.BottomText = bottomText
 
-	log.Print("Telegram service stopping...")
-	telegramService.Stop()
-	log.Print("Telegram service stopped.")
+		// Get the file from the request
+		file, err := c.FormFile("file")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload failed"})
+		}
 
+		// Open the file for reading
+		src, err := file.Open()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to open the file"})
+		}
+		defer src.Close()
+
+		dst, err := os.CreateTemp("", "sample")
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to create temporary file"})
+		}
+		defer dst.Close()
+
+		if _, err = dst.ReadFrom(src); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to save the file"})
+		}
+
+		resultFileName, err := imageInterface.DrawText(dst.Name(), topText, bottomText)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to create temporary file"})
+		}
+		// Respond with success and metadata
+		return c.File(resultFileName)
+	})
+
+	return &Server{e: e}
+}
+
+func (s *Server) Start() {
+	s.e.Start(":8080")
+}
+
+func (s *Server) Stop() {
+	s.e.Shutdown(context.Background())
+}
+
+type Metadata struct {
+	TopText    string `json:"top_text"`
+	BottomText string `json:"bottom_text"`
 }

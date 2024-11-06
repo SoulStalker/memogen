@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/joho/godotenv"
 	"log"
+	"memogen/internal/server"
 
 	"memogen/internal/service/image"
 	"memogen/internal/service/telegram"
@@ -25,7 +26,7 @@ func main() {
 
 	imageService := image.NewImageService()
 	telegramService := telegram.NewTelegramService(token, imageService)
-	//httpServer := server.NewServer(imageService)
+	httpServer := server.NewServer(imageService)
 
 	done := make(chan os.Signal)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -36,7 +37,7 @@ func main() {
 	}()
 
 	go func() {
-		//httpServer.Start()
+		httpServer.Start()
 	}()
 	<-done
 
